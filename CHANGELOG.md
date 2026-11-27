@@ -2,16 +2,25 @@
 
 All notable changes to openset-llm. Dates are YYYY-MM-DD.
 
-## Unreleased
+## 0.3.4 (2026-11-27)
+
+Install with one command, and a container image on every release. Speed and the model file are unchanged.
 
 Added
 
 - One-command install: `curl -fsSL https://raw.githubusercontent.com/opensetlabs/openset-llm/main/get.sh | bash`.
   No clone and no compiler: it installs the latest release with its prebuilt engine and adds an `openset-llm`
   command (`openset-llm`, `openset-llm serve`, `check`, `version`, `update`). A failed install leaves the previous
-  version in place.
+  version in place (#141).
 - Container image on every release: publishing a release builds the Dockerfile and pushes
-  `ghcr.io/opensetlabs/openset-llm:<tag>` and `:latest`.
+  `ghcr.io/opensetlabs/openset-llm:<tag>` and `:latest` (#141).
+
+Fixed
+
+- Benchmark harness: when an arm's launcher exits after a failed request, its server children are now stopped before
+  the replacement starts, so two servers no longer overlap or outlive the run (#139, fixes #138).
+
+Thank you to @Afloat16 for the benchmark fix.
 
 ## 0.3.3 (2026-11-27)
 
