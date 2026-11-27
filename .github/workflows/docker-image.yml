@@ -1,0 +1,42 @@
+name: docker-image
+
+# Builds the engine image from the Dockerfile. When a release is published it is pushed to the GitHub container
+# registry as ghcr.io/<owner>/openset-llm:<tag> and :latest. Started by hand it only builds, as a check.
+# The image holds the engine, not the model: the model is downloaded into a volume on first start.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/openset-llm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: docker build -t "$IMAGE:build" .
+
+      - name: The engine in the image starts
+        run: docker run --rm --entrypoint /opt/openset-llm/bin/llama-server -e LD_LIBRARY_PATH=/opt/openset-llm/bin "$IMAGE:build" --version
+
+      - name: Push to the container registry
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "$IMAGE:build" "$IMAGE:$TAG"
+          docker tag "$IMAGE:build" "$IMAGE:latest"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"

@@ -66,6 +66,17 @@ but no AVX-512 (Intel Core 12th gen and newer, older Core, AMD Zen 1 to 3) runs 
 ([what was measured, and how to run it](#cpus-without-avx-512)). It builds from source, so it needs git, cmake and
 a C++ compiler; on Ubuntu or Debian: `sudo apt install -y build-essential cmake git`.
 
+**Fastest way in: one command, no clone and no compiler.** It installs the latest release with the engine already
+built for it, downloads the model, and adds an `openset-llm` command (x86-64 Linux or WSL2 with glibc 2.35 or newer:
+Ubuntu 22.04, Debian 12 and later). You can read the script first: [get.sh](get.sh).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/opensetlabs/openset-llm/main/get.sh | bash
+openset-llm
+```
+
+Or build it from source, which works on older systems too and uses a build tuned to your CPU:
+
 ```sh
 git clone https://github.com/opensetlabs/openset-llm && cd openset-llm
 ./start
@@ -432,6 +443,12 @@ docker run --rm -p 127.0.0.1:8080:8080 -v openset-llm-models:/data/models opense
 ```
 
 The first `docker run` downloads the model (~7.3 GB) into the `openset-llm-models` volume; later runs start in ~40 s.
+
+From release 0.3.4 on, each release also publishes this image, so you can skip the clone and the build:
+
+```sh
+docker run --rm -p 127.0.0.1:8080:8080 -v openset-llm-models:/data/models ghcr.io/opensetlabs/openset-llm
+```
 
 **Windows (WSL2).** WSL2 gets half of your RAM by default, so on a 16 GB PC raise it first. In PowerShell:
 

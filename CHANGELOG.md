@@ -4,6 +4,15 @@ All notable changes to openset-llm. Dates are YYYY-MM-DD.
 
 ## Unreleased
 
+Added
+
+- One-command install: `curl -fsSL https://raw.githubusercontent.com/opensetlabs/openset-llm/main/get.sh | bash`.
+  No clone and no compiler: it installs the latest release with its prebuilt engine and adds an `openset-llm`
+  command (`openset-llm`, `openset-llm serve`, `check`, `version`, `update`). A failed install leaves the previous
+  version in place.
+- Container image on every release: publishing a release builds the Dockerfile and pushes
+  `ghcr.io/opensetlabs/openset-llm:<tag>` and `:latest`.
+
 ## 0.3.3 (2026-11-27)
 
 Install without a compiler: releases now carry a prebuilt engine.

@@ -16,7 +16,8 @@ attacker gains. You will get an answer within a week.
   may install build tools with apt or pip. `--bin-url` downloads and runs a prebuilt binary: only use a tarball you
   trust. `--prebuilt` downloads the engine attached to the latest release of this repository and checks it against
   that release's `SHA256SUMS`; the checksum comes from the same release, so it detects a damaged download, not a
-  tampered release. Nothing is fetched after install.
+  tampered release. `get.sh` (the one-command installer) downloads the sources of a release and runs that
+  release's `install.sh --prebuilt`; read it before piping it to a shell if you do not know this project. Nothing is fetched after install.
 - **Prompt states on disk.** With resume on (the default), the server keeps up to 8 prefix states built from your
   prompts in `~/.openset-llm/state`. Delete the folder to clear them, or run `./serve --no-resume`.
 - Until the first tagged release, only the latest commit on `main` is supported with fixes.
