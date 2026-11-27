@@ -12,6 +12,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/opensetlabs/openset-llm/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/opensetlabs/openset-llm?label=release&color=brightgreen"></a>
   <img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue">
   <img alt="Platform: Linux x86-64, AVX-512 or AVX2" src="https://img.shields.io/badge/platform-Linux%20x86--64%20%C2%B7%20AVX--512%20or%20AVX2-lightgrey">
   <img alt="API: OpenAI-compatible" src="https://img.shields.io/badge/API-OpenAI--compatible-brightgreen">
@@ -24,10 +25,22 @@
 </p>
 
 ```sh
-git clone https://github.com/opensetlabs/openset-llm && cd openset-llm && ./start
+curl -fsSL https://raw.githubusercontent.com/opensetlabs/openset-llm/main/get.sh | bash
+openset-llm
 ```
 
-<p align="center"><sub>Linux (or WSL2), an x86-64 CPU with AVX-512 (fastest) or AVX2, 8 GB of RAM. The first run builds the engine and downloads the model (~7.3 GB), then opens a chat page. <a href="#quick-start">Details</a></sub></p>
+<p align="center"><sub>Linux (or WSL2), an x86-64 CPU with AVX-512 (fastest) or AVX2, 8 GB of RAM. No clone and no compiler: it installs the engine already built, downloads the model (~7.3 GB), then opens a chat page. <a href="#quick-start">Details, Docker and building from source</a></sub></p>
+
+**New since launch** (0.3.0 to 0.3.4, [release notes](https://github.com/opensetlabs/openset-llm/releases) · [changelog](CHANGELOG.md)):
+
+- **One command to install**, with no clone and no compiler, and `openset-llm update` to move to the next release.
+- **A prebuilt engine on every release**, checked against its checksum (`./install.sh --prebuilt` in a clone).
+- **A container image on every release:** `ghcr.io/opensetlabs/openset-llm`, see [Run it locally](#run-it-locally).
+- **Laptops and desktops without AVX-512** (Intel Core, AMD Zen 1 to 3) run on new 256-bit kernels, 3.5× the old
+  path there ([measured](#cpus-without-avx-512)).
+- **25 fixes from the community** in the engine, resume from disk, the installer and the benchmark tools, plus a
+  [deployment guide](docs/deployment.md) (WSL2 memory, systemd service) and a
+  [smoke test](scripts/smoke-test.sh) for a running server.
 
 An LLM is not a sealed box. It is a stack of parts you can rewrite: matmul kernels, decoding, attention, caches. People
 already rewire single neurons to change what a model does; we rewired the machinery underneath to change where it runs.
@@ -63,8 +76,7 @@ serves an OpenAI-compatible API, so the clients and agents you already use work 
 machine is comfortable; on Windows WSL2 must be given 8 GB, see [Run it locally](#run-it-locally)) and an x86-64
 processor. The speeds on this page need AVX-512: Intel Xeon Ice Lake or newer, or AMD Zen 4 or newer. A CPU with AVX2
 but no AVX-512 (Intel Core 12th gen and newer, older Core, AMD Zen 1 to 3) runs on our 256-bit kernels
-([what was measured, and how to run it](#cpus-without-avx-512)). It builds from source, so it needs git, cmake and
-a C++ compiler; on Ubuntu or Debian: `sudo apt install -y build-essential cmake git`.
+([what was measured, and how to run it](#cpus-without-avx-512)).
 
 **Fastest way in: one command, no clone and no compiler.** It installs the latest release with the engine already
 built for it, downloads the model, and adds an `openset-llm` command (x86-64 Linux or WSL2 with glibc 2.35 or newer:
@@ -75,7 +87,8 @@ curl -fsSL https://raw.githubusercontent.com/opensetlabs/openset-llm/main/get.sh
 openset-llm
 ```
 
-Or build it from source, which works on older systems too and uses a build tuned to your CPU:
+Or build it from source, which works on older systems too and uses a build tuned to your CPU. This needs git, cmake
+and a C++ compiler; on Ubuntu or Debian: `sudo apt install -y build-essential cmake git`.
 
 ```sh
 git clone https://github.com/opensetlabs/openset-llm && cd openset-llm
@@ -497,7 +510,8 @@ To keep the server running in the background as a systemd service, see [docs/dep
   and Zen 5. The AVX2 path was measured on Ice Lake server VMs with AVX-512 disabled, and its AVX-VNNI variant was
   checked under an emulator ([CPUs without AVX-512](#cpus-without-avx-512)). The 8 vCPU of our Ice Lake test boxes behave like 8 physical cores; a typical cloud 8 vCPU (AWS / GCP / Azure) is 4 cores, so
   expect lower absolute speed there.
-- **8 GB is the floor:** 4k context by default; above 4k on < 12 GB, `serve` uses plain decoding (above 8k with `--kv8`,
+- **8 GB is the floor:** on a machine with less, the installer stops, because the model does not fit: the system
+  swaps or kills the server, and no smaller model is supported yet. With 8 GB: 4k context by default; above 4k on < 12 GB, `serve` uses plain decoding (above 8k with `--kv8`,
   12k with `--kv6`, 16k with `--kv5`). The compact caches are experimental and were measured on one CPU class.
 - **Speculation changes a reply only at near-ties:** greedy replies are byte-identical to plain decoding on 17/24 of
   the benchmark prompts and 75/128 of a broader set; task scores are the same (Numbers).
