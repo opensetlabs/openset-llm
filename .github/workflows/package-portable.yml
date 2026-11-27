@@ -77,7 +77,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: openset-llm-portable-linux-x86_64
       - name: Attach the tarball and its checksum to the release
