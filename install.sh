@@ -12,6 +12,7 @@
 #   ./install.sh --model-only    # keep the engine already in $OPENSET_LLM_HOME/bin, just fetch + prepare the model
 #
 # Everything goes to $OPENSET_LLM_HOME (default ~/.openset-llm). Model weights come from Hugging Face; nothing is redistributed.
+[ "${BASH_VERSINFO[0]}" -ge 4 ] || { echo "this needs bash 4 or newer (macOS ships 3.2): brew install bash, then run it again" >&2; exit 1; }
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -22,6 +23,7 @@ HF=${HF_ENDPOINT:-https://huggingface.co}
 BASE_REPO=prism-ml/Ternary-Bonsai-2-27B-gguf;  BASE_FILE=Ternary-Bonsai-2-27B-PTQ1_0.gguf
 MTP_REPO=unsloth/Qwen3.8-27B-GGUF;             MTP_FILE=MTP/mtp-Qwen3.8-27B-Q4_0.gguf
 MIN_RAM_KB=7600000      # an "8 GB" machine reports ~7.6-8.1 GB; the server's resident set is ~7.0 GB
+MIN_MAC_RAM_KB=15000000
 MIN_DISK_GB=15          # base 6.0 + MTP sidecar 1.4 + grafted model 6.2 at peak, + the build
 
 PORTABLE=0; BIN_URL=${OPENSET_LLM_BIN_URL:-}; MTP=1; CHECK_ONLY=0; MODEL_ONLY=0; PREBUILT=0; ENGINE_ID_ONLY=0
@@ -44,6 +46,7 @@ done
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+OS=$(uname -s)
 
 # What the engine is built from: the pinned fork commit, the patches and the kernels. Not this script, not the docs.
 engine_id() { echo "$FORK_SHA $(cat "$HERE/patches/apply.sh" "$HERE"/patches/*.patch "$HERE"/kernels/* | cksum | cut -d' ' -f1)"; }
@@ -58,6 +61,13 @@ fi
 # ---------------------------------------------------------------- CPU check
 cpu_path() {
   local arch flags; arch=$(uname -m)
+  if [ "$OS" = Darwin ]; then
+    case $arch in
+      arm64) echo "metal|Apple Silicon: the model runs on the GPU (Metal); this repo's CPU kernels are x86 only" ;;
+      *) echo "unsupported|Intel Macs are not supported (Apple Silicon only)" ;;
+    esac
+    return
+  fi
   case $arch in
     x86_64|amd64)
       flags=" $(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null | cut -d: -f2) "
@@ -81,22 +91,33 @@ cpu_path() {
     *) echo "unsupported|$arch is not supported" ;;
   esac
 }
-[ "$(uname -s)" = Linux ] || die "Linux only for now (on a Mac, PrismML's Metal build is the faster choice)."
+case $OS in Linux|Darwin) ;; *) die "Linux and macOS on Apple Silicon only for now." ;; esac
 CPU=$(cpu_path); CPU_KIND=${CPU%%|*}
-say "CPU: $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ //' || uname -m)"
+say "CPU: $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ //' || sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)"
 say "Path: ${CPU#*|}"
 [ "$CPU_KIND" = unsupported ] && die "${CPU#*|}"
+if [ "$OS" = Darwin ] && [ "$PORTABLE" = 1 ]; then die "--portable builds x86-64 binaries; on a Mac run ./install.sh without it"; fi
+if [ "$OS" = Darwin ] && [ -n "$BIN_URL" ]; then die "--bin-url takes Linux binaries; on a Mac run ./install.sh without it"; fi
 
 # ---------------------------------------------------------------- RAM / disk check
-mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
-if [ -r /sys/fs/cgroup/memory.max ]; then           # containers: the cgroup limit is what counts
-  lim=$(cat /sys/fs/cgroup/memory.max)
-  [ "$lim" != max ] && [ $((lim / 1024)) -lt "$mem_kb" ] && mem_kb=$((lim / 1024))
+if [ "$OS" = Darwin ]; then
+  mem_kb=$(( $(sysctl -n hw.memsize) / 1024 ))
+  min_ram_kb=$MIN_MAC_RAM_KB
+else
+  mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+  if [ -r /sys/fs/cgroup/memory.max ]; then           # containers: the cgroup limit is what counts
+    lim=$(cat /sys/fs/cgroup/memory.max)
+    [ "$lim" != max ] && [ $((lim / 1024)) -lt "$mem_kb" ] && mem_kb=$((lim / 1024))
+  fi
+  min_ram_kb=$MIN_RAM_KB
 fi
 say "RAM: $((mem_kb / 1024)) MiB"
-if [ "$mem_kb" -lt "$MIN_RAM_KB" ]; then
-  die "this needs a machine with at least 8 GB of RAM (found $((mem_kb / 1024)) MiB).
-       The model alone is ~6 GB resident and the server needs close to 8 GB at its peak; below 8 GB it will be OOM-killed."
+if [ "$mem_kb" -lt "$min_ram_kb" ]; then
+  case $OS in
+    Darwin) die "this needs a Mac with at least 16 GB of memory (found $((mem_kb / 1024)) MiB). The GPU can use about three quarters of it, and the weights alone take 5.5 GiB." ;;
+    *) die "this needs a machine with at least 8 GB of RAM (found $((mem_kb / 1024)) MiB).
+       The model alone is ~6 GB resident and the server needs close to 8 GB at its peak; below 8 GB it will be OOM-killed." ;;
+  esac
 fi
 [ "$CHECK_ONLY" = 1 ] && exit 0
 mkdir -p "$PREFIX"/{bin,models}
@@ -133,7 +154,9 @@ if [ "$MTP" = 1 ] && [ ! -f "$PREFIX/models/model.gguf" ] && ! python3 -I -c 'im
   if python3 -m venv "$PREFIX/venv" >/dev/null 2>&1 || { apt_install python3-venv && python3 -m venv "$PREFIX/venv"; }; then
     "$PREFIX/venv/bin/pip" install -q numpy pyyaml && PY=$PREFIX/venv/bin/python
   else
-    apt_install python3-numpy python3-yaml || die "need numpy + pyyaml for the MTP graft: install python3-numpy python3-yaml, or rerun with --no-mtp"
+    mtp_die="need numpy + pyyaml for the MTP graft: install python3-numpy python3-yaml, or rerun with --no-mtp"
+    if [ "$OS" = Darwin ]; then mtp_die="need numpy + pyyaml for the MTP graft and python3 -m venv failed: install Python 3 from python.org or Homebrew, or rerun with --no-mtp"; fi
+    apt_install python3-numpy python3-yaml || die "$mtp_die"
   fi
 fi
 if [ "$BUILD" = 1 ] && ! command -v cmake >/dev/null; then   # no apt/sudo: cmake + ninja from PyPI
@@ -142,7 +165,9 @@ if [ "$BUILD" = 1 ] && ! command -v cmake >/dev/null; then   # no apt/sudo: cmak
 fi
 for t in curl python3; do command -v $t >/dev/null || die "missing $t"; done
 if [ "$NEED_GIT" = 1 ]; then command -v git >/dev/null || die "missing git; install git to build the engine or fetch the MTP reader"; fi
-if [ "$BUILD" = 1 ]; then for t in cmake c++; do command -v $t >/dev/null || die "missing $t. On Ubuntu or Debian: sudo apt install -y build-essential cmake git (or use --bin-url)"; done; fi
+build_hint="On Ubuntu or Debian: sudo apt install -y build-essential cmake git (or use --bin-url)"
+if [ "$OS" = Darwin ]; then build_hint="On macOS: xcode-select --install (install.sh fetches cmake from PyPI if it is missing)"; fi
+if [ "$BUILD" = 1 ]; then for t in cmake c++; do command -v $t >/dev/null || die "missing $t. $build_hint"; done; fi
 
 # ---------------------------------------------------------------- engine
 SRC=$PREFIX/llama.cpp
@@ -241,6 +266,9 @@ elif [ "$BUILD" = 1 ]; then
     say "Building (portable: every x86-64 kernel variant, chosen at run time)"
     flags=(-DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON
            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON "-DCMAKE_INSTALL_RPATH=\$ORIGIN")
+  elif [ "$OS" = Darwin ]; then
+    say "Building for this Mac (Metal)"
+    flags=(-DGGML_NATIVE=ON -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON)
   else
     say "Building for this CPU (-march=native)"
     flags=(-DGGML_NATIVE=ON -DBUILD_SHARED_LIBS=OFF)
@@ -250,12 +278,12 @@ elif [ "$BUILD" = 1 ]; then
     || { tail -20 "$PREFIX/build.log"; die "cmake configure failed (log: $PREFIX/build.log)"; }
   # containers: nproc can be the host's thread count (seen: 64 under an 8-CPU, 16 GB limit), and 64 compilers OOM
   # the box. Cap the jobs by the cgroup CPU quota and by ~1 GiB of free memory per job.
-  jobs=$(nproc)
+  jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
   if [ -r /sys/fs/cgroup/cpu.max ]; then
     read -r q p < /sys/fs/cgroup/cpu.max
     [ "$q" != max ] && [ $(( (q + p - 1) / p )) -lt "$jobs" ] && jobs=$(( (q + p - 1) / p ))
   fi
-  free_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+  if [ "$OS" = Darwin ]; then free_kb=$mem_kb; else free_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo); fi
   if [ -r /sys/fs/cgroup/memory.max ] && [ "$(cat /sys/fs/cgroup/memory.max)" != max ]; then
     cg_kb=$(( ($(cat /sys/fs/cgroup/memory.max) - $(cat /sys/fs/cgroup/memory.current 2>/dev/null || echo 0)) / 1024 ))
     [ "$cg_kb" -lt "$free_kb" ] && free_kb=$cg_kb

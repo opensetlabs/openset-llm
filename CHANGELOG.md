@@ -97,8 +97,17 @@ Added
   `./serve --spec` turns it on and drafts 2 tokens ahead there. AVX-512 machines are unchanged. See "CPUs without AVX-512" in the README.
 - `scripts/verify-dispatch.sh` checks the 256-bit kernels too (alone, inside the AVX-512 build, and in the build for
   AVX-512 CPUs without VNNI); `tests/` gained a kernel test against a scalar reference.
+- macOS on Apple Silicon: `./install.sh` builds the pinned fork with this repo's patches and Metal, and `./serve` runs
+  the model on the GPU with agent-loop resume. Measured on an M4 (16 GB): an agent step with a 4.4k-token prompt and a
+  new last message takes 7.1–7.7 s instead of 152–176 s, and 7.0 s after a server restart; decoding 6.8–7.3 tok/s.
+  Speculation is off by default there (2.5–2.8 tok/s with `--spec`); `--kv8`, `--kv6` and `--kv5` are refused. Needs 16 GB
+  and bash 4 or newer (`brew install bash`). `./start` and `bench/quick.sh` work on a Mac too. See "Run it locally" in
+  the README.
 
 Fixed
+
+- `bench/quick.sh` cut the server mode short when it held parentheses: `speculation: on (lower-memory mode)` printed
+  as `lower-memory mode)`, and `resume: on (shared prefix)` with `--multi` as `shared prefix)`.
 
 - In 0.2.0 and earlier, a `--portable` build could not start on a CPU without AVX-512; the Docker image and
   `--bin-url` binaries are made from that build. Fixed in this release. Found and checked under emulated Haswell and

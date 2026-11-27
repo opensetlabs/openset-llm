@@ -42,7 +42,7 @@ arm() {   # arm <label> <serve args...>: one server, NP prompts, one result line
     kill -0 "$PID" 2>/dev/null || { echo "the server stopped while loading:" >&2; tail -5 "$LOG" >&2; exit 1; }
     sleep 1
   done
-  LABEL=$label MODE=$(grep -m1 '^serving on' "$LOG" | sed 's/.*(\(.*\))/\1/') \
+  LABEL=$label MODE=$(grep -m1 '^serving on' "$LOG" | sed 's/^[^(]*(\(.*\))$/\1/') \
   python3 - "$HERE/bench/prompts24.jsonl" "$PORT" "$NP" "$NTOK" <<'PY'
 import json, os, statistics as st, sys, urllib.request
 path, port, n, ntok = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
@@ -63,11 +63,19 @@ PY
   stop
 }
 
-cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //')
-flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
-simd=; for f in avx2 avx_vnni avx512f avx512bw avx512_vnni avx512vbmi; do case "$flags" in *" $f "*) simd="$simd $f" ;; esac; done
-cores=$(lscpu 2>/dev/null | awk -F: '/^Core\(s\) per socket/ {c=$2} /^Socket\(s\)/ {s=$2} END {if (c && s) print c * s}')
-ram=$(awk '/^MemTotal:/ {printf "%.1f", $2 / 1048576}' /proc/meminfo)
+if [ "$(uname -s)" = Darwin ]; then
+  cpu=$(sysctl -n machdep.cpu.brand_string)
+  cores=$(sysctl -n hw.physicalcpu)
+  ram=$(awk -v b="$(sysctl -n hw.memsize)" 'BEGIN {printf "%.1f", b / 1073741824}')
+  simd_line="- GPU: Metal"
+else
+  cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //')
+  flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
+  simd=; for f in avx2 avx_vnni avx512f avx512bw avx512_vnni avx512vbmi; do case "$flags" in *" $f "*) simd="$simd $f" ;; esac; done
+  cores=$(lscpu 2>/dev/null | awk -F: '/^Core\(s\) per socket/ {c=$2} /^Socket\(s\)/ {s=$2} END {if (c && s) print c * s}')
+  ram=$(awk '/^MemTotal:/ {printf "%.1f", $2 / 1048576}' /proc/meminfo)
+  simd_line="- SIMD:${simd:- none of avx2 / avx512}"
+fi
 commit=$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo "no git checkout")
 echo "measuring: $NP prompts x $NTOK tokens per row (a few minutes)..." >&2
 # Keep arms in this shell: command substitution disables errexit and hides PID
@@ -84,8 +92,8 @@ cat <<OUT
 
 **openset-llm quick check** (\`bench/quick.sh\`, commit $commit, $(date -u +%Y-%m-%d))
 
-- CPU: $cpu, ${cores:-?} cores / $(nproc) threads${THREADS:+ (run with --threads $THREADS)}
-- SIMD:${simd:- none of avx2 / avx512}
+- CPU: $cpu, ${cores:-?} cores / $(nproc 2>/dev/null || sysctl -n hw.ncpu) threads${THREADS:+ (run with --threads $THREADS)}
+$simd_line
 - RAM: $ram GiB, $(uname -sr)
 
 | setting | decode tok/s, median [min–max] | prompt tok/s, median | server mode |

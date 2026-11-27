@@ -64,7 +64,8 @@ machine is comfortable; on Windows WSL2 must be given 8 GB, see [Run it locally]
 processor. The speeds on this page need AVX-512: Intel Xeon Ice Lake or newer, or AMD Zen 4 or newer. A CPU with AVX2
 but no AVX-512 (Intel Core 12th gen and newer, older Core, AMD Zen 1 to 3) runs on our 256-bit kernels
 ([what was measured, and how to run it](#cpus-without-avx-512)). It builds from source, so it needs git, cmake and
-a C++ compiler; on Ubuntu or Debian: `sudo apt install -y build-essential cmake git`.
+a C++ compiler; on Ubuntu or Debian: `sudo apt install -y build-essential cmake git`. On a Mac with Apple Silicon and
+16 GB the same two lines work, with bash 4 or newer ([Mac](#run-it-locally)).
 
 **Fastest way in: one command, no clone and no compiler.** It installs the latest release with the engine already
 built for it, downloads the model, and adds an `openset-llm` command (x86-64 Linux or WSL2 with glibc 2.35 or newer:
@@ -244,7 +245,7 @@ AVX-VNNI where the CPU has it); one without AVX2 still runs, on the fork's own k
 | Intel Core 12th gen and newer (Alder / Raptor / Meteor / Arrow Lake) | AVX2 + AVX-VNNI | 256-bit kernels, VNNI dot product | not measured on such a CPU; the kernels were checked bit-exact, and the engine gave the same reply, under an emulated Alder Lake |
 | Intel Core before 12th gen without AVX-512, AMD Zen 1 to 3 (Ryzen 1000–5000, EPYC 7001–7003) | AVX2 | 256-bit kernels | **measured on Ice Lake server VMs with AVX-512 disabled** ([table](#cpus-without-avx-512)): 6.1–7.7 tok/s plain decoding, 3.5× the fork's own kernel on the same box, 0.7× of the AVX-512 path |
 | ARM64 Linux (Graviton, Ampere, Raspberry Pi 5) | NEON | fallback: fork's kernel | builds; untested |
-| Apple Silicon | — | not supported by `install.sh`: use PrismML's Metal build | — |
+| Apple Silicon (16 GB and more) | Metal (GPU) | the fork's Metal kernels, plus this repo's agent-loop resume | **M4 measured** (16 GB, 2026-11-27): 6.8–7.3 tok/s decoding; an agent step at 4.4k tokens takes 7 s instead of 152–176 s ([Mac](#run-it-locally)) |
 
 ### CPUs without AVX-512
 
@@ -465,9 +466,28 @@ memory=10GB
 Then, in the Ubuntu shell, run the Linux one-liner above. Clone into your Linux home (`~`), not `/mnt/c`: reading the
 model through `/mnt/c` is much slower. Most laptop CPUs (Intel 12th gen and newer) have no AVX-512 and get the 256-bit kernels.
 
-**Mac.** Our kernels are x86 only (AVX-512 and AVX2). On Apple Silicon, use PrismML's own build of their fork with Metal
-([PrismML-Eng/llama.cpp](https://github.com/PrismML-Eng/llama.cpp)), which is much faster there than any CPU path.
-Intel Macs are not supported by `install.sh`.
+**Mac (Apple Silicon).** Needs 16 GB of memory, ~15 GB free disk while installing, the Xcode command line tools
+(`xcode-select --install`), Python 3, and bash 4 or newer (macOS ships 3.2: `brew install bash`). `install.sh` builds
+the pinned fork with this repo's patches and Metal, and `serve` puts every layer on the GPU. Our kernels are x86 only
+and do nothing here; on a Mac this repo adds agent-loop resume.
+
+```sh
+git clone https://github.com/opensetlabs/openset-llm && cd openset-llm && ./install.sh && ./serve
+```
+
+| M4 (10-core GPU, 16 GB), 2026-11-27 | |
+|---|---|
+| `bench/quick.sh` (6 prompts × 128 tokens, greedy; median of each of 2 runs) | 6.80 and 7.31 tok/s decoding, 28 tok/s prompt reading |
+| agent step, 4.4k-token prompt with a new last message, `./serve --ctx 8192` | 7.1–7.7 s (18–21 tokens read again); 152–176 s with `--no-resume` (all 4.4k) |
+| the same step after a server restart (the system prompt's state loads from disk in 0.14 s) | 7.0 s; 157 s with `--no-resume` |
+
+- Replies were byte-identical with and without resume (5/5 through `./serve`, 8/8 more on the same build).
+- Resume reads a new kind of prompt in full twice before it knows where the next request will diverge: steps 0 and 1
+  of the loop above took 160–167 s.
+- Speculation is off by default: with the fork pinned here, `./serve --spec` decodes at 2.47–2.76 tok/s on the same prompts
+  (65 % of drafts accepted). `--kv8`, `--kv6` and `--kv5` run in the x86 attention kernel and are refused on a Mac.
+- Not measured: `--multi`, other chips (M1 to M3, Pro and Max), contexts above 8192. Intel Macs are not supported, and
+  `install.sh` refuses Macs under 16 GB (the GPU can use about three quarters of the memory; the weights take 5.5 GiB).
 
 **Test it** (any of the above):
 
@@ -494,7 +514,7 @@ To keep the server running in the background as a systemd service, see [docs/dep
 ## Limits
 
 - **Hardware:** the fast path needs x86 with AVX-512 VNNI + VBMI (table above). Measured on Intel Ice Lake, AMD Zen 4
-  and Zen 5. The AVX2 path was measured on Ice Lake server VMs with AVX-512 disabled, and its AVX-VNNI variant was
+  and Zen 5. On a Mac the model runs on the GPU through the fork's Metal kernels; measured on one M4. The AVX2 path was measured on Ice Lake server VMs with AVX-512 disabled, and its AVX-VNNI variant was
   checked under an emulator ([CPUs without AVX-512](#cpus-without-avx-512)). The 8 vCPU of our Ice Lake test boxes behave like 8 physical cores; a typical cloud 8 vCPU (AWS / GCP / Azure) is 4 cores, so
   expect lower absolute speed there.
 - **8 GB is the floor:** 4k context by default; above 4k on < 12 GB, `serve` uses plain decoding (above 8k with `--kv8`,

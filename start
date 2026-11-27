@@ -25,7 +25,8 @@ case $HOST in 0.0.0.0) SHOW=127.0.0.1 ;; ::) SHOW=::1 ;; esac
 case $SHOW in *:*) SHOW=[$SHOW] ;; esac
 URL=http://$SHOW:$PORT
 open_page() {   # Linux desktop, WSL, or just print the address
-  if command -v xdg-open >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then xdg-open "$URL" >/dev/null 2>&1 && return
+  if [ "$(uname -s)" = Darwin ]; then open "$URL" >/dev/null 2>&1 && return
+  elif command -v xdg-open >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then xdg-open "$URL" >/dev/null 2>&1 && return
   elif command -v wslview >/dev/null 2>&1; then wslview "$URL" >/dev/null 2>&1 && return
   elif command -v explorer.exe >/dev/null 2>&1; then explorer.exe "$URL" >/dev/null 2>&1; return
   fi
