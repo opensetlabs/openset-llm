@@ -44,7 +44,7 @@ class InstallRegression(unittest.TestCase):
                               env=self.env, text=True, capture_output=True, timeout=15)
 
     def test_download_restarts_when_mirror_ignores_range(self):
-        contents = b'complete model fixture'
+        contents = b"GGUF" + (3).to_bytes(4, "little") + b"resumed model body"
         ranges = []
         class Mirror(BaseHTTPRequestHandler):
             def do_GET(self):

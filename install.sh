@@ -280,6 +280,12 @@ fi
 
 # ---------------------------------------------------------------- model
 M=$PREFIX/models
+# A model starts like one: a GGUF file begins with the magic (the format version follows it). curl's exit status
+# and byte count say nothing about the body; a proxy or a mirror that answers with a sign-in or error page looks
+# like a finished download, and the file it wrote would be published as the model.
+gguf_ok() {   # file
+  [ "$(head -c 4 "$1" 2>/dev/null)" = GGUF ]
+}
 get() {   # repo file dest
   [ -f "$3" ] && return 0
   say "Downloading $1/$2"
@@ -295,6 +301,12 @@ get() {   # repo file dest
     else
       die "the download of $2 failed; run ./install.sh again to resume it"
     fi
+  fi
+  if ! gguf_ok "$3.part"; then
+    rm -f "$3.part"
+    die "$2 is not a GGUF model file: the download from $HF/$1/resolve/main/$2 did not start with a model header.
+       A proxy, a mirror or a captive network can send a web page instead of the file.
+       The partial download was removed; run ./install.sh again to fetch it, or try another network."
   fi
   mv "$3.part" "$3"
 }
