@@ -54,7 +54,9 @@ main() {
   echo "$version" > "$stage/.version"
 
   # the engine attached to that same release, checked against its SHA256SUMS; the model comes from Hugging Face
+  # (install.sh ends by saying how to start it from where it ran, which is a temporary folder here: leave that out)
   OPENSET_LLM_RELEASE_URL=${OPENSET_LLM_RELEASE_URL:-$repo/releases/download/$version} bash "$stage/install.sh" --prebuilt \
+    | sed -e '/^Start it:/d' -e '/^Then chat:/d' \
     || die "the install did not finish (see the message above); nothing was changed in $app"
 
   # only now replace the previous scripts

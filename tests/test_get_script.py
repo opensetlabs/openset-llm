@@ -53,6 +53,7 @@ class GetScript(unittest.TestCase):
             'start': f'#!/bin/sh\necho "start {marker} $*"\n',
         }
         files['install.sh'] += ('printf \'%s|%s\\n\' "$*" "$OPENSET_LLM_RELEASE_URL" >> "$INSTALL_LOG"\n'
+                                'echo "Start it:           from-the-staging-folder/serve"\n'
                                 f'exit {install_rc}\n')
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode='w:gz') as tar:
@@ -77,6 +78,8 @@ class GetScript(unittest.TestCase):
         result = self.get()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.app / '.version').read_text().strip(), 'v9.8.7')
+        self.assertNotIn('from-the-staging-folder', result.stdout)   # install.sh's own hint names a temporary folder
+        self.assertIn('Start it:', result.stdout)
         # install.sh ran with --prebuilt, against the assets of that same release
         self.assertEqual((self.work / 'install.log').read_text().strip(),
                          '--prebuilt|https://github.com/opensetlabs/openset-llm/releases/download/v9.8.7')
