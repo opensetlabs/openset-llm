@@ -3,7 +3,7 @@
 logprobs of every generated token. Shows how close the first diverging token is to a tie.
     python3 lp.py --arms arms_short.json --only ours,ours_ns,ours_a0_ns --prompts prompts_diag.jsonl --out ~/res/lp
 """
-import argparse, json, os, shlex, subprocess, time, urllib.request
+import argparse, json, os, shlex, subprocess, tempfile, time, urllib.request
 from bench2 import start, stop, post
 
 
@@ -32,9 +32,12 @@ def main():
                              "tokens": [[x["token"], x["logprob"], [(y["token"], y["logprob"]) for y in x.get("top_logprobs", [])]] for x in lp]})
         finally:
             stop(proc)
-        with open(f, "w") as fh:
-            for x in rows:
-                fh.write(json.dumps(x) + "\n")
+        with tempfile.TemporaryDirectory(dir=a.out) as staging:
+            staged = os.path.join(staging, "result.jsonl")
+            with open(staged, "w") as fh:
+                for x in rows:
+                    fh.write(json.dumps(x) + "\n")
+            os.replace(staged, f)
 
 
 if __name__ == "__main__":
