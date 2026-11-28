@@ -2,6 +2,15 @@
 
 All notable changes to openset-llm. Dates are YYYY-MM-DD.
 
+## Unreleased
+
+Fixed
+
+- Installer: a model download that is not a model file (a sign-in or error page sent by a proxy, mirror or captive
+  network) is now refused with a clear message, not installed as the model (#147, fixes #146).
+
+Thanks to @SuperMarioYL for this fix.
+
 ## 0.3.4 (2026-11-27)
 
 Install with one command, and a container image on every release. Speed and the model file are unchanged.
